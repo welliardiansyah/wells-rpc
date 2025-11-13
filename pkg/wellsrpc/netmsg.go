@@ -15,7 +15,7 @@ const (
 )
 
 func SendMessage(conn net.Conn, msg WelliMarshaller) error {
-	data := msg.MarshalWelli()
+	data := msg.MarshalWells()
 	header := [4]byte{}
 	binary.LittleEndian.PutUint32(header[:], uint32(len(data)))
 

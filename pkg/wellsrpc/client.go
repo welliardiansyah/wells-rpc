@@ -126,7 +126,7 @@ func (c *RPCClient) UseUnaryInterceptor(i UnaryClientInterceptor) {
 }
 
 func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller, resp WelliMarshaller) error {
-	reqData := req.MarshalWelli()
+	reqData := req.MarshalWells()
 	invoke := func(ctx context.Context, payload []byte) ([]byte, error) {
 		streamID := c.nextStreamID()
 		p := &pendingResponse{ch: make(chan *Frame, 1)}
@@ -187,7 +187,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller
 	if err != nil {
 		return err
 	}
-	return resp.UnmarshalWelli(out)
+	return resp.UnmarshalWells(out)
 }
 
 func (c *RPCClient) OpenStream(ctx context.Context, method string) (*Stream, error) {

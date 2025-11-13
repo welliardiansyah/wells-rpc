@@ -35,20 +35,20 @@ func generateBatchData(n int) []*codec.SensorReading {
 	return data
 }
 
-func BenchmarkWellsBin_Encode(b *testing.B) {
+func BenchmarkWellsRpc_Encode(b *testing.B) {
 	s := generateDummyData()
 	for i := 0; i < b.N; i++ {
-		_ = s.MarshalWelli()
+		_ = s.MarshalWells()
 	}
 }
 
-func BenchmarkWellsBin_Decode(b *testing.B) {
+func BenchmarkWellsRpc_Decode(b *testing.B) {
 	s := generateDummyData()
-	data := s.MarshalWelli()
+	data := s.MarshalWells()
 	out := &codec.SensorReading{}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = out.UnmarshalWelli(data)
+		_ = out.UnmarshalWells(data)
 	}
 }
 
@@ -69,12 +69,12 @@ func BenchmarkJSON_Decode(b *testing.B) {
 	}
 }
 
-func BenchmarkWellsBin_BatchEncode(b *testing.B) {
+func BenchmarkWellsRpc_BatchEncode(b *testing.B) {
 	batch := generateBatchData(10000)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, s := range batch {
-			_ = s.MarshalWelli()
+			_ = s.MarshalWells()
 		}
 	}
 }
@@ -89,22 +89,22 @@ func BenchmarkJSON_BatchEncode(b *testing.B) {
 	}
 }
 
-func BenchmarkWellsBin_ParallelEncode(b *testing.B) {
+func BenchmarkWellsRpc_ParallelEncode(b *testing.B) {
 	s := generateDummyData()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_ = s.MarshalWelli()
+			_ = s.MarshalWells()
 		}
 	})
 }
 
-func BenchmarkWellsBin_ParallelDecode(b *testing.B) {
+func BenchmarkWellsRpc_ParallelDecode(b *testing.B) {
 	s := generateDummyData()
-	data := s.MarshalWelli()
+	data := s.MarshalWells()
 	b.RunParallel(func(pb *testing.PB) {
 		out := &codec.SensorReading{}
 		for pb.Next() {
-			_ = out.UnmarshalWelli(data)
+			_ = out.UnmarshalWells(data)
 		}
 	})
 }
@@ -129,7 +129,7 @@ func BenchmarkJSON_ParallelDecode(b *testing.B) {
 	})
 }
 
-func BenchmarkWellsBin_LargePayload(b *testing.B) {
+func BenchmarkWellsRpc_LargePayload(b *testing.B) {
 	s := generateDummyData()
 	s.Payload = make([]byte, 10*1024*1024)
 	for i := range s.Payload {
@@ -137,7 +137,7 @@ func BenchmarkWellsBin_LargePayload(b *testing.B) {
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = s.MarshalWelli()
+		_ = s.MarshalWells()
 	}
 }
 
@@ -153,14 +153,14 @@ func BenchmarkJSON_LargePayload(b *testing.B) {
 	}
 }
 
-func BenchmarkWellsBin_Stress(b *testing.B) {
+func BenchmarkWellsRpc_Stress(b *testing.B) {
 	data := generateBatchData(100000)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		for _, s := range data {
-			buf := s.MarshalWelli()
+			buf := s.MarshalWells()
 			out := &codec.SensorReading{}
-			_ = out.UnmarshalWelli(buf)
+			_ = out.UnmarshalWells(buf)
 		}
 	}
 }

@@ -17,7 +17,7 @@ type Ack struct {
 	Success bool
 }
 
-func (s *SensorReading) MarshalWelli() []byte {
+func (s *SensorReading) MarshalWells() []byte {
 	buf := wellsrpc.GetBuffer()
 	defer wellsrpc.PutBuffer(buf)
 	b := *buf
@@ -42,7 +42,7 @@ func (s *SensorReading) MarshalWelli() []byte {
 	return out
 }
 
-func (s *SensorReading) UnmarshalWelli(b []byte) error {
+func (s *SensorReading) UnmarshalWells(b []byte) error {
 	var i int
 	for i < len(b) {
 		tag := b[i]
@@ -106,7 +106,7 @@ func (s *SensorReading) UnmarshalWelli(b []byte) error {
 	return nil
 }
 
-func (a *Ack) MarshalWelli() []byte {
+func (a *Ack) MarshalWells() []byte {
 	buf := wellsrpc.GetBuffer()
 	defer wellsrpc.PutBuffer(buf)
 	b := *buf
@@ -121,7 +121,7 @@ func (a *Ack) MarshalWelli() []byte {
 	return out
 }
 
-func (a *Ack) UnmarshalWelli(b []byte) error {
+func (a *Ack) UnmarshalWells(b []byte) error {
 	var i int
 	for i < len(b) {
 		tag := b[i]

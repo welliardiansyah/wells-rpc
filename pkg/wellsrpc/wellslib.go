@@ -1,14 +1,14 @@
 package wellsrpc
 
 type WelliMarshaller interface {
-	MarshalWelli() []byte
-	UnmarshalWelli([]byte) error
+	MarshalWells() []byte
+	UnmarshalWells([]byte) error
 }
 
 func Marshal(msg WelliMarshaller) []byte {
-	return msg.MarshalWelli()
+	return msg.MarshalWells()
 }
 
 func Unmarshal(msg WelliMarshaller, b []byte) error {
-	return msg.UnmarshalWelli(b)
+	return msg.UnmarshalWells(b)
 }

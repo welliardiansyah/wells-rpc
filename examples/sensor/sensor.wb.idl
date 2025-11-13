@@ -1,0 +1,14 @@
+message SensorReading {
+  int64 timestamp = 1;
+  float temperature = 2;
+  float humidity = 3;
+  bytes payload = 4;
+}
+
+message Ack {
+  bool success = 1;
+}
+
+service SensorService {
+  rpc SendReading (SensorReading) returns (Ack);
+}
