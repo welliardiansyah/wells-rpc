@@ -79,6 +79,7 @@ func (c *RPCClient) readLoop() {
 			return
 		default:
 		}
+
 		frame, err := ReadFrame(c.conn)
 		if err != nil {
 			c.mu.Lock()
@@ -91,6 +92,7 @@ func (c *RPCClient) readLoop() {
 			c.mu.Unlock()
 			return
 		}
+
 		c.mu.Lock()
 		p := c.pending[frame.StreamID]
 		c.mu.Unlock()
@@ -101,6 +103,7 @@ func (c *RPCClient) readLoop() {
 			}
 			continue
 		}
+
 		c.streamsMu.Lock()
 		st := c.streams[frame.StreamID]
 		c.streamsMu.Unlock()
@@ -127,9 +130,11 @@ func (c *RPCClient) UseUnaryInterceptor(i UnaryClientInterceptor) {
 
 func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller, resp WelliMarshaller) error {
 	reqData := req.MarshalWells()
+
 	invoke := func(ctx context.Context, payload []byte) ([]byte, error) {
 		streamID := c.nextStreamID()
 		p := &pendingResponse{ch: make(chan *Frame, 1)}
+
 		c.mu.Lock()
 		c.pending[streamID] = p
 		c.mu.Unlock()
@@ -146,6 +151,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller
 		if err != nil {
 			return nil, err
 		}
+
 		select {
 		case rf := <-p.ch:
 			if rf == nil {
@@ -165,9 +171,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller
 	}
 
 	var chained func(ctx context.Context, payload []byte) ([]byte, error)
-	chained = func(ctx context.Context, payload []byte) ([]byte, error) {
-		return invoke(ctx, payload)
-	}
+	chained = invoke
 	for i := len(c.unaryInterceptors) - 1; i >= 0; i-- {
 		inter := c.unaryInterceptors[i]
 		next := chained
@@ -198,6 +202,7 @@ func (c *RPCClient) OpenStream(ctx context.Context, method string) (*Stream, err
 		defer c.mu.Unlock()
 		return WriteFrame(c.conn, f)
 	})
+
 	c.streamsMu.Lock()
 	c.streams[streamID] = stream
 	c.streamsMu.Unlock()

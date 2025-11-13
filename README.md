@@ -27,6 +27,7 @@
   <li><a href="#usage">Usage</a></li>
   <li><a href="#idl-and-code-generation">IDL & Code Generation</a></li>
   <li><a href="#example-producer-and-consumer">Example Producer & Consumer</a></li>
+  <li><a href="#workflow-diagram">Workflow Diagram</a></li>
   <li><a href="#benchmark">Benchmark</a></li>
   <li><a href="#testing">Testing</a></li>
   <li><a href="#development-workflow">Development Workflow</a></li>
@@ -154,7 +155,7 @@ go run cmd/welli-codegen/main.go examples/sensor/sensor.wb.idl
 <p>Generated files are placed in <code>pkg/wellsrpc/codec_generated/</code> and include:</p>
 <ul>
   <li>Structs with <code>MarshalWells()</code> & <code>UnmarshalWells()</code></li>
-  <li>RPC client & server stubs</li>
+  <li>RPC client & server stubs with simple call methods</li>
 </ul>
 
 <h2 id="example-producer-and-consumer">📦 Example Producer & Consumer</h2>
@@ -222,6 +223,50 @@ func main() {
 }
 </code></pre>
 
+<h2 id="workflow-diagram">📊 Workflow Diagram</h2>
+
+<p>WellsRPC flow from IDL to simple client/server usage:</p>
+
+<pre><code>
+       +-----------------+
+       |  .wb.idl File   |
+       | (Service/Message|
+       |   Definitions)  |
+       +--------+--------+
+                |
+                | go run cmd/welli-codegen/main.go
+                v
+       +------------------------+
+       |  Generated Go Package  |
+       | pkg/wellsrpc/codec_generated/
+       |------------------------|
+       | - Structs             |
+       | - RPC Server Stubs     |
+       | - RPC Client Stubs     |
+       | - Simple Client/Server |
+       +----------+-------------+
+                  |
+      +-----------+-----------+
+      |                       |
+      v                       v
++------------+          +---------------+
+| RPC Server |          | Simple Client |
+| (Register  | <------- | (Auto-call    |
+|   Services)|          | methods)      |
++------------+          +---------------+
+      |                       ^
+      | Serve & Listen         |
+      +-----------------------+
+      | Client Requests        |
+      v
+  +---------------+
+  |   Business    |
+  |   Logic       |
+  +---------------+
+</code></pre>
+
+<p>With auto-generated client & server stubs, you can call RPC methods directly via typed functions without manual serialization.</p>
+
 <h2 id="benchmark">⚙️ Benchmark</h2>
 <pre><code>
 go test ./benchmark -bench=. -benchmem
@@ -244,6 +289,7 @@ BenchmarkJSON_Decode-8            545829     2060 ns/op  550 B/op   8 allocs/op
   <li>Write schema in <code>.wb.idl</code></li>
   <li>Run codegen to generate Go structs & RPC stubs</li>
   <li>Implement producer/consumer using <code>MarshalWells()</code>/<code>UnmarshalWells()</code></li>
+  <li>Call RPC methods directly via auto-generated client functions</li>
   <li>Write unit tests and benchmarks</li>
   <li>Publish updates via GitHub & Go modules</li>
 </ol>

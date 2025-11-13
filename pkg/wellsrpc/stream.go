@@ -18,7 +18,7 @@ func newStream(id uint32, send func([]byte) error) *Stream {
 	return &Stream{
 		ID:     id,
 		send:   send,
-		recvCh: make(chan []byte, 64),
+		recvCh: make(chan []byte, 128), // increased buffer
 	}
 }
 
@@ -43,15 +43,11 @@ func (s *Stream) Recv(ctx context.Context) ([]byte, error) {
 	}
 }
 
-func (s *Stream) closeLocked() {
+func (s *Stream) Close() {
+	s.mu.Lock()
 	if !s.closed {
 		s.closed = true
 		close(s.recvCh)
 	}
-}
-
-func (s *Stream) Close() {
-	s.mu.Lock()
-	s.closeLocked()
 	s.mu.Unlock()
 }

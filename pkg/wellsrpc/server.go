@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"time"
 )
 
 type Handler func(ctx context.Context, payload []byte) ([]byte, error)
@@ -61,6 +60,7 @@ func (s *RPCServer) Serve(addr string) error {
 	if err != nil {
 		return err
 	}
+
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -85,6 +85,7 @@ func (s *RPCServer) serveConn(conn net.Conn) {
 			fmt.Println("read frame err:", err)
 			return
 		}
+
 		switch frame.Type {
 		case FrameTypeRequest:
 			go s.handleUnary(conn, frame)
@@ -96,12 +97,14 @@ func (s *RPCServer) serveConn(conn net.Conn) {
 				_ = WriteFrame(conn, &Frame{Type: FrameTypeError, StreamID: frame.StreamID, Payload: []byte("stream handler not found")})
 				continue
 			}
+
 			stream := newStream(frame.StreamID, func(data []byte) error {
 				return send(&Frame{Type: FrameTypeStreamData, StreamID: frame.StreamID, Payload: data})
 			})
 			smu.Lock()
 			streamMap[frame.StreamID] = stream
 			smu.Unlock()
+
 			go func() {
 				ctx, cancel := context.WithCancel(context.Background())
 				defer cancel()
@@ -122,53 +125,42 @@ func (s *RPCServer) serveConn(conn net.Conn) {
 				select {
 				case st.recvCh <- frame.Payload:
 				default:
-					// drop to avoid blocking; you might add backpressure
 				}
 			}
-		case FrameTypeStreamClose:
-			smu.Lock()
-			if st, ok := streamMap[frame.StreamID]; ok {
-				st.Close()
-				delete(streamMap, frame.StreamID)
-			}
-			smu.Unlock()
-		case FrameTypePing:
-			_ = WriteFrame(conn, &Frame{Type: FrameTypePong, StreamID: frame.StreamID})
 		}
 	}
 }
 
-func (s *RPCServer) handleUnary(conn net.Conn, frame *Frame) {
-	method := frame.Method
+func (s *RPCServer) handleUnary(conn net.Conn, f *Frame) {
 	s.handlersLock.RLock()
-	h, ok := s.handlers[method]
+	h, ok := s.handlers[f.Method]
 	s.handlersLock.RUnlock()
 	if !ok {
-		_ = WriteFrame(conn, &Frame{Type: FrameTypeError, StreamID: frame.StreamID, Payload: []byte("method not found: " + method)})
+		_ = WriteFrame(conn, &Frame{Type: FrameTypeError, StreamID: f.StreamID, Payload: []byte("handler not found")})
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	exec := func(ctx context.Context, payload []byte) ([]byte, error) {
+	ctx := context.Background()
+	invoke := func(ctx context.Context, payload []byte) ([]byte, error) {
 		return h(ctx, payload)
 	}
-	var chained Handler = exec
+
+	var chained func(ctx context.Context, payload []byte) ([]byte, error)
+	chained = invoke
 	for i := len(s.unaryInterceptors) - 1; i >= 0; i-- {
 		inter := s.unaryInterceptors[i]
 		next := chained
 		chained = func(ctx context.Context, payload []byte) ([]byte, error) {
-			return inter(ctx, payload, func(c context.Context, p []byte) ([]byte, error) {
-				return next(c, p)
-			})
+			return inter(ctx, payload, next)
 		}
 	}
 
-	resp, err := chained(ctx, frame.Payload)
+	out, err := chained(ctx, f.Payload)
+	var frame *Frame
 	if err != nil {
-		_ = WriteFrame(conn, &Frame{Type: FrameTypeError, StreamID: frame.StreamID, Payload: []byte(err.Error())})
-		return
+		frame = &Frame{Type: FrameTypeError, StreamID: f.StreamID, Payload: []byte(err.Error())}
+	} else {
+		frame = &Frame{Type: FrameTypeResponse, StreamID: f.StreamID, Payload: out}
 	}
-	_ = WriteFrame(conn, &Frame{Type: FrameTypeResponse, StreamID: frame.StreamID, Payload: resp})
+	_ = WriteFrame(conn, frame)
 }
