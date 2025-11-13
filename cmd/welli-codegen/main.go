@@ -29,24 +29,50 @@ type fieldDef struct {
 }
 
 func main() {
-	var idlDir, outDir string
-	flag.StringVar(&idlDir, "idl-dir", "./idl", "Directory to scan for IDL files (*.wb.idl)")
-	flag.StringVar(&outDir, "out-dir", "./pkg/wellsrpc/codec_generated", "Output directory")
+	var idlPath, outDir string
+	flag.StringVar(&idlPath, "idl", "", "IDL file or directory to scan (*.wb.idl)")
+	flag.StringVar(&outDir, "out-dir", "", "Output directory (required)")
 	flag.Parse()
 
-	files := []string{}
-	err := filepath.Walk(idlDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".wb.idl") {
-			files = append(files, path)
-		}
-		return nil
-	})
-	if err != nil {
-		fmt.Println("scan idl-dir:", err)
+	if outDir == "" {
+		fmt.Println("Error: -out-dir must be specified")
 		os.Exit(1)
+	}
+	if idlPath == "" {
+		fmt.Println("Error: -idl must be specified")
+		os.Exit(1)
+	}
+
+	var files []string
+	info, err := os.Stat(idlPath)
+	if err != nil {
+		fmt.Println("Error:", err)
+		os.Exit(1)
+	}
+
+	if info.IsDir() {
+		// Scan directory
+		err := filepath.Walk(idlPath, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() && strings.HasSuffix(info.Name(), ".wb.idl") {
+				files = append(files, path)
+			}
+			return nil
+		})
+		if err != nil {
+			fmt.Println("scan idl-dir:", err)
+			os.Exit(1)
+		}
+	} else {
+		// Single file
+		if strings.HasSuffix(info.Name(), ".wb.idl") {
+			files = append(files, idlPath)
+		} else {
+			fmt.Println("Error: IDL file must have .wb.idl extension")
+			os.Exit(1)
+		}
 	}
 
 	for _, f := range files {
@@ -113,15 +139,12 @@ func generateService(idlPath, outBase string) error {
 		return err
 	}
 
-	// generate codec.go
 	if err := writeCodec(pkgDir, messages); err != nil {
 		return err
 	}
-	// generate server.go
 	if err := writeServer(pkgDir, srvName, rpcs); err != nil {
 		return err
 	}
-	// generate client.go
 	if err := writeClient(pkgDir, srvName, rpcs); err != nil {
 		return err
 	}
@@ -139,11 +162,8 @@ func writeCodec(pkgDir string, messages []messageDef) error {
 	defer f.Close()
 
 	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
-	fmt.Fprintln(f, `import (`)
-	fmt.Fprintln(f, `"errors"`)
-	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
-	fmt.Fprintln(f, `)`)
-	fmt.Fprintln(f) // Diperbaiki: menghapus \n berlebihan
+	fmt.Fprintln(f, `import "errors"`)
+	fmt.Fprintln(f, `import wellsrpc "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
 
 	for _, msg := range messages {
 		fmt.Fprintf(f, "type %s struct {\n", msg.Name)
@@ -152,7 +172,6 @@ func writeCodec(pkgDir string, messages []messageDef) error {
 		}
 		fmt.Fprintln(f, "}")
 		fmt.Fprintln(f)
-		// Marshal/Unmarshal skeleton
 		fmt.Fprintf(f, "func (m *%s) MarshalWells() []byte { return nil }\n", msg.Name)
 		fmt.Fprintf(f, "func (m *%s) UnmarshalWells(b []byte) error { return nil }\n\n", msg.Name)
 	}
@@ -192,7 +211,6 @@ func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
 	fmt.Fprintln(f, `"context"`)
 	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
 	fmt.Fprintln(f, `)`)
-	fmt.Fprintln(f) // Diperbaiki: menghapus \n berlebihan
 
 	fmt.Fprintf(f, "type %sServer interface {\n", srvName)
 	for _, r := range rpcs {
@@ -227,7 +245,6 @@ func writeClient(pkgDir, srvName string, rpcs []rpcDef) error {
 	fmt.Fprintln(f, `"context"`)
 	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
 	fmt.Fprintln(f, `)`)
-	fmt.Fprintln(f)
 
 	fmt.Fprintf(f, "type %sClient struct {\n  c *wellib.RPCClient\n}\n\n", srvName)
 	fmt.Fprintf(f, "func New%sClient(addr string) *%sClient {\n", srvName, srvName)
