@@ -29,17 +29,25 @@ type fieldDef struct {
 }
 
 func main() {
-	var idlPath, outDir string
+	var (
+		idlPath  string
+		outDir   string
+		showHelp bool
+	)
+
 	flag.StringVar(&idlPath, "idl", "", "Path to .wb.idl file or directory containing IDL files")
 	flag.StringVar(&outDir, "out", "", "Output directory for generated Go code")
+	flag.BoolVar(&showHelp, "help", false, "Show usage help")
+	flag.BoolVar(&showHelp, "h", false, "Show usage help (shorthand)")
 	flag.Parse()
 
-	if idlPath == "" {
-		fmt.Println("❌ Error: please provide -idl argument (path to .wb.idl file or folder)")
-		os.Exit(1)
+	if showHelp {
+		printHelp()
+		return
 	}
-	if outDir == "" {
-		fmt.Println("❌ Error: please provide -out argument (output directory)")
+
+	if idlPath == "" || outDir == "" {
+		printHelp()
 		os.Exit(1)
 	}
 
@@ -87,6 +95,24 @@ func main() {
 	}
 }
 
+func printHelp() {
+	fmt.Println(`
+WellsRPC Code Generator
+
+Usage:
+  welli-codegen -idl <path> -out <output_dir>
+
+Examples:
+  welli-codegen -idl ./idl/sensor.wb.idl -out ./wellsrpc
+  welli-codegen -idl ./idl -out ./generated
+
+Options:
+  -idl        Path to .wb.idl file or directory containing IDL files
+  -out        Output directory for generated Go code
+  -h, --help  Show this help message
+`)
+}
+
 func generateService(idlPath, outBase string) error {
 	data, err := os.ReadFile(idlPath)
 	if err != nil {
@@ -101,13 +127,16 @@ func generateService(idlPath, outBase string) error {
 	serviceRe := regexp.MustCompile(`^service\s+(\w+)`)
 	rpcRe := regexp.MustCompile(`rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s*returns\s*\(\s*(\w+)\s*\)`)
 	messageRe := regexp.MustCompile(`^message\s+(\w+)`)
-	fieldRe := regexp.MustCompile(`^(\w+)\s+(\w+)`)
+	fieldRe := regexp.MustCompile(`^(\w+)\s+(\w+);`)
 
 	var currentMsg *messageDef
 	tagCounter := 1
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "//") {
+			continue
+		}
 
 		if m := serviceRe.FindStringSubmatch(line); m != nil {
 			srvName = m[1]
@@ -170,11 +199,6 @@ func writeCodec(pkgDir string, messages []messageDef) error {
 	defer f.Close()
 
 	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
-	// fmt.Fprintln(f, `import (`)
-	// fmt.Fprintln(f, `  "errors"`)
-	// fmt.Fprintln(f, `  wellsrpc "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
-	// fmt.Fprintln(f, `)`)
-
 	for _, msg := range messages {
 		fmt.Fprintf(f, "\ntype %s struct {\n", msg.Name)
 		for _, field := range msg.Fields {
@@ -198,10 +222,10 @@ func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
 	defer f.Close()
 
 	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
-	fmt.Fprintln(f, `import (`)
-	fmt.Fprintln(f, `  "context"`)
-	fmt.Fprintln(f, `  wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
-	fmt.Fprintln(f, `)`)
+	fmt.Fprintln(f, `import (
+  "context"
+  wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"
+)`)
 
 	fmt.Fprintf(f, "\ntype %sServer interface {\n", srvName)
 	for _, r := range rpcs {
@@ -233,10 +257,10 @@ func writeClient(pkgDir, srvName string, rpcs []rpcDef) error {
 	defer f.Close()
 
 	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
-	fmt.Fprintln(f, `import (`)
-	fmt.Fprintln(f, `  "context"`)
-	fmt.Fprintln(f, `  wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
-	fmt.Fprintln(f, `)`)
+	fmt.Fprintln(f, `import (
+  "context"
+  wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"
+)`)
 
 	fmt.Fprintf(f, "\ntype %sClient struct {\n  c *wellib.RPCClient\n}\n\n", srvName)
 	fmt.Fprintf(f, "func New%sClient(addr string) *%sClient {\n", srvName, srvName)
