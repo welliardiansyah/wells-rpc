@@ -97,7 +97,7 @@ func writeHeader(f *os.File, srvName string) {
 	fmt.Fprintln(f, `"context"`)
 	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
 	fmt.Fprintln(f, ")")
-	fmt.Fprintln(f)
+	fmt.Fprintln(f, "")
 }
 
 func writeServer(f *os.File, srvName string, rpcs []rpcDef) {
@@ -119,7 +119,7 @@ func writeServer(f *os.File, srvName string, rpcs []rpcDef) {
 		fmt.Fprintln(f, "  })")
 	}
 	fmt.Fprintln(f, "  return srv\n}")
-	fmt.Fprintln(f)
+	fmt.Fprintln(f, "")
 }
 
 func writeClient(f *os.File, srvName string, rpcs []rpcDef) {
