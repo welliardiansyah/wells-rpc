@@ -101,53 +101,53 @@ func writeHeader(f *os.File, srvName string) {
 }
 
 func writeServer(f *os.File, srvName string, rpcs []rpcDef) {
-	fmt.Fprintf(f, "type %sServer interface {\n", srvName)
+	fmt.Fprintf(f, "type %sServer interface {", srvName)
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "  %s(ctx context.Context, req *%s) (*%s, error)\n", r.Method, r.Req, r.Res)
+		fmt.Fprintf(f, "  %s(ctx context.Context, req *%s) (*%s, error)", r.Method, r.Req, r.Res)
 	}
-	fmt.Fprintln(f, "}\n")
+	fmt.Fprintln(f, "}")
 
-	fmt.Fprintf(f, "func NewServer(impl %sServer) *wellib.RPCServer {\n", srvName)
+	fmt.Fprintf(f, "func NewServer(impl %sServer) *wellib.RPCServer {", srvName)
 	fmt.Fprintln(f, "  srv := wellib.NewRPCServer()")
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "  srv.Register(\"%s.%s\", func(ctx context.Context, payload []byte) ([]byte, error) {\n", srvName, r.Method)
-		fmt.Fprintf(f, "    var req %s\n", r.Req)
+		fmt.Fprintf(f, "  srv.Register(\"%s.%s\", func(ctx context.Context, payload []byte) ([]byte, error) {", srvName, r.Method)
+		fmt.Fprintf(f, "    var req %s", r.Req)
 		fmt.Fprintln(f, "    if err := req.UnmarshalWells(payload); err != nil { return nil, err }")
-		fmt.Fprintf(f, "    resp, err := impl.%s(ctx, &req)\n", r.Method)
+		fmt.Fprintf(f, "    resp, err := impl.%s(ctx, &req)", r.Method)
 		fmt.Fprintln(f, "    if err != nil { return nil, err }")
 		fmt.Fprintln(f, "    return resp.MarshalWells(), nil")
 		fmt.Fprintln(f, "  })")
 	}
-	fmt.Fprintln(f, "  return srv\n}")
+	fmt.Fprintln(f, "  return srv}")
 	fmt.Fprintln(f, "")
 }
 
 func writeClient(f *os.File, srvName string, rpcs []rpcDef) {
-	fmt.Fprintf(f, "type Client struct { c *wellib.RPCClient }\n\n")
-	fmt.Fprintf(f, "func NewClient(addr string) *Client {\n")
-	fmt.Fprintf(f, "  conn, _ := wellib.Dial(addr, nil)\n")
-	fmt.Fprintf(f, "  return &Client{c: conn}\n")
-	fmt.Fprintln(f, "}\n")
+	fmt.Fprintf(f, "type Client struct { c *wellib.RPCClient }")
+	fmt.Fprintf(f, "func NewClient(addr string) *Client {")
+	fmt.Fprintf(f, "  conn, _ := wellib.Dial(addr, nil)")
+	fmt.Fprintf(f, "  return &Client{c: conn}")
+	fmt.Fprintln(f, "}")
 
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "func (c *Client) %s(ctx context.Context, req *%s) (*%s, error) {\n", r.Method, r.Req, r.Res)
-		fmt.Fprintf(f, "  var out %s\n", r.Res)
-		fmt.Fprintf(f, "  if err := c.c.Call(ctx, \"%s.%s\", req, &out); err != nil { return nil, err }\n", srvName, r.Method)
+		fmt.Fprintf(f, "func (c *Client) %s(ctx context.Context, req *%s) (*%s, error) {", r.Method, r.Req, r.Res)
+		fmt.Fprintf(f, "  var out %s", r.Res)
+		fmt.Fprintf(f, "  if err := c.c.Call(ctx, \"%s.%s\", req, &out); err != nil { return nil, err }", srvName, r.Method)
 		fmt.Fprintln(f, "  return &out, nil")
-		fmt.Fprintln(f, "}\n")
+		fmt.Fprintln(f, "}")
 	}
 }
 
 func writeHelper(f *os.File, srvName string, rpcs []rpcDef) {
-	fmt.Fprintf(f, "// High-level simple client\n")
-	fmt.Fprintf(f, "type SimpleClient struct { client *Client }\n\n")
-	fmt.Fprintf(f, "func NewSimpleClient(addr string) *SimpleClient {\n")
-	fmt.Fprintf(f, "  return &SimpleClient{client: NewClient(addr)}\n")
-	fmt.Fprintln(f, "}\n")
+	fmt.Fprintf(f, "// High-level simple client")
+	fmt.Fprintf(f, "type SimpleClient struct { client *Client }")
+	fmt.Fprintf(f, "func NewSimpleClient(addr string) *SimpleClient {")
+	fmt.Fprintf(f, "  return &SimpleClient{client: NewClient(addr)}")
+	fmt.Fprintln(f, "}")
 
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "func (s *SimpleClient) %s(ctx context.Context, req *%s) (*%s, error) {\n", r.Method, r.Req, r.Res)
+		fmt.Fprintf(f, "func (s *SimpleClient) %s(ctx context.Context, req *%s) (*%s, error) {", r.Method, r.Req, r.Res)
 		fmt.Fprintln(f, "  return s.client."+r.Method+"(ctx, req)")
-		fmt.Fprintln(f, "}\n")
+		fmt.Fprintln(f, "}")
 	}
 }
