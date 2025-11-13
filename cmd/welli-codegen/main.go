@@ -51,7 +51,6 @@ func main() {
 	}
 
 	if info.IsDir() {
-		// Scan directory
 		err := filepath.Walk(idlPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -66,7 +65,6 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		// Single file
 		if strings.HasSuffix(info.Name(), ".wb.idl") {
 			files = append(files, idlPath)
 		} else {
@@ -179,6 +177,7 @@ func writeCodec(pkgDir string, messages []messageDef) error {
 	return formatFile(f)
 }
 
+// Perbaikan mapType agar bytes jadi []byte
 func mapType(t string) string {
 	switch t {
 	case "int64":
@@ -193,6 +192,8 @@ func mapType(t string) string {
 		return "string"
 	case "bool":
 		return "bool"
+	case "bytes":
+		return "[]byte" // <<< ini penting
 	default:
 		return "*" + t
 	}
