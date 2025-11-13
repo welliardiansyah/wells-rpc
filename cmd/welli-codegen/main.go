@@ -96,7 +96,7 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Println(`
+	fmt.Print(`
 WellsRPC Code Generator
 
 Usage:
