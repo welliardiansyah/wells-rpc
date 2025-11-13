@@ -1,0 +1,40 @@
+# GitHub Actions workflow for building and testing a Go project
+
+name: Go CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1. Checkout repository
+    - uses: actions/checkout@v4
+
+    # 2. Set up Go environment
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.18'
+        check-latest: true
+
+    # 3. Enable Go Modules (tidak wajib tapi aman)
+    - name: Enable Go Modules
+      run: go env -w GO111MODULE=on
+
+    # 4. Download dependencies
+    - name: Install dependencies
+      run: go mod tidy
+
+    # 5. Build the project
+    - name: Build
+      run: go build -v ./...
+
+    # 6. Run tests including benchmarks
+    - name: Test
+      run: go test -v -bench=. -benchmem ./...
