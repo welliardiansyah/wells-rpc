@@ -30,26 +30,26 @@ type fieldDef struct {
 
 func main() {
 	var idlPath, outDir string
-	flag.StringVar(&idlPath, "idl", "", "IDL file or directory to scan (*.wb.idl)")
-	flag.StringVar(&outDir, "out-dir", "", "Output directory (required)")
+	flag.StringVar(&idlPath, "idl", "", "Path to .wb.idl file or directory containing IDL files")
+	flag.StringVar(&outDir, "out", "", "Output directory for generated Go code")
 	flag.Parse()
 
-	if outDir == "" {
-		fmt.Println("Error: -out-dir must be specified")
+	if idlPath == "" {
+		fmt.Println("❌ Error: please provide -idl argument (path to .wb.idl file or folder)")
 		os.Exit(1)
 	}
-	if idlPath == "" {
-		fmt.Println("Error: -idl must be specified")
+	if outDir == "" {
+		fmt.Println("❌ Error: please provide -out argument (output directory)")
+		os.Exit(1)
+	}
+
+	info, err := os.Stat(idlPath)
+	if err != nil {
+		fmt.Println("❌ Error:", err)
 		os.Exit(1)
 	}
 
 	var files []string
-	info, err := os.Stat(idlPath)
-	if err != nil {
-		fmt.Println("Error:", err)
-		os.Exit(1)
-	}
-
 	if info.IsDir() {
 		err := filepath.Walk(idlPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -61,21 +61,28 @@ func main() {
 			return nil
 		})
 		if err != nil {
-			fmt.Println("scan idl-dir:", err)
+			fmt.Println("❌ Failed to scan directory:", err)
 			os.Exit(1)
 		}
 	} else {
-		if strings.HasSuffix(info.Name(), ".wb.idl") {
-			files = append(files, idlPath)
-		} else {
-			fmt.Println("Error: IDL file must have .wb.idl extension")
+		if !strings.HasSuffix(info.Name(), ".wb.idl") {
+			fmt.Println("❌ Error: IDL file must have .wb.idl extension")
 			os.Exit(1)
 		}
+		files = append(files, idlPath)
+	}
+
+	if len(files) == 0 {
+		fmt.Println("⚠️  No .wb.idl files found in:", idlPath)
+		return
 	}
 
 	for _, f := range files {
+		fmt.Printf("⚙️  Generating from %s...\n", f)
 		if err := generateService(f, outDir); err != nil {
-			fmt.Println("failed:", f, err)
+			fmt.Println("❌ Failed:", f, "error:", err)
+		} else {
+			fmt.Printf("✅ Successfully generated from %s\n", f)
 		}
 	}
 }
@@ -101,6 +108,7 @@ func generateService(idlPath, outBase string) error {
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
+
 		if m := serviceRe.FindStringSubmatch(line); m != nil {
 			srvName = m[1]
 		}
@@ -113,7 +121,9 @@ func generateService(idlPath, outBase string) error {
 			}
 			currentMsg = &messageDef{Name: m[1], Fields: []fieldDef{}}
 			tagCounter = 1
-		} else if currentMsg != nil {
+			continue
+		}
+		if currentMsg != nil {
 			if f := fieldRe.FindStringSubmatch(line); f != nil {
 				currentMsg.Fields = append(currentMsg.Fields, fieldDef{
 					Type: f[1],
@@ -129,7 +139,7 @@ func generateService(idlPath, outBase string) error {
 	}
 
 	if srvName == "" || len(rpcs) == 0 {
-		return fmt.Errorf("no service or rpc in %s", idlPath)
+		return fmt.Errorf("no valid service or rpc definition in %s", idlPath)
 	}
 
 	pkgDir := filepath.Join(outBase, strings.ToLower(srvName))
@@ -147,7 +157,7 @@ func generateService(idlPath, outBase string) error {
 		return err
 	}
 
-	fmt.Println("Generated service:", srvName, "at", pkgDir)
+	fmt.Println("📦 Generated service:", srvName, "→", pkgDir)
 	return nil
 }
 
@@ -160,43 +170,23 @@ func writeCodec(pkgDir string, messages []messageDef) error {
 	defer f.Close()
 
 	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
-	fmt.Fprintln(f, `import "errors"`)
-	fmt.Fprintln(f, `import wellsrpc "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
+	// fmt.Fprintln(f, `import (`)
+	// fmt.Fprintln(f, `  "errors"`)
+	// fmt.Fprintln(f, `  wellsrpc "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
+	// fmt.Fprintln(f, `)`)
 
 	for _, msg := range messages {
-		fmt.Fprintf(f, "type %s struct {\n", msg.Name)
+		fmt.Fprintf(f, "\ntype %s struct {\n", msg.Name)
 		for _, field := range msg.Fields {
 			fmt.Fprintf(f, "  %s %s\n", strings.Title(field.Name), mapType(field.Type))
 		}
 		fmt.Fprintln(f, "}")
-		fmt.Fprintln(f)
-		fmt.Fprintf(f, "func (m *%s) MarshalWells() []byte { return nil }\n", msg.Name)
-		fmt.Fprintf(f, "func (m *%s) UnmarshalWells(b []byte) error { return nil }\n\n", msg.Name)
+
+		fmt.Fprintf(f, "\nfunc (m *%s) MarshalWells() []byte { return nil }\n", msg.Name)
+		fmt.Fprintf(f, "func (m *%s) UnmarshalWells(b []byte) error { return nil }\n", msg.Name)
 	}
 
 	return formatFile(f)
-}
-
-// Perbaikan mapType agar bytes jadi []byte
-func mapType(t string) string {
-	switch t {
-	case "int64":
-		return "int64"
-	case "int32":
-		return "int32"
-	case "float32":
-		return "float32"
-	case "float64":
-		return "float64"
-	case "string":
-		return "string"
-	case "bool":
-		return "bool"
-	case "bytes":
-		return "[]byte" // <<< ini penting
-	default:
-		return "*" + t
-	}
 }
 
 func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
@@ -209,17 +199,17 @@ func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
 
 	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
 	fmt.Fprintln(f, `import (`)
-	fmt.Fprintln(f, `"context"`)
-	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
+	fmt.Fprintln(f, `  "context"`)
+	fmt.Fprintln(f, `  wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
 	fmt.Fprintln(f, `)`)
 
-	fmt.Fprintf(f, "type %sServer interface {\n", srvName)
+	fmt.Fprintf(f, "\ntype %sServer interface {\n", srvName)
 	for _, r := range rpcs {
 		fmt.Fprintf(f, "  %s(ctx context.Context, req *%s) (*%s, error)\n", r.Method, r.Req, r.Res)
 	}
 	fmt.Fprintln(f, "}")
 
-	fmt.Fprintf(f, "func Register%sServer(srv *wellib.RPCServer, impl %sServer) {\n", srvName, srvName)
+	fmt.Fprintf(f, "\nfunc Register%sServer(srv *wellib.RPCServer, impl %sServer) {\n", srvName, srvName)
 	for _, r := range rpcs {
 		fmt.Fprintf(f, "  srv.Register(\"%s.%s\", func(ctx context.Context, payload []byte) ([]byte, error) {\n", srvName, r.Method)
 		fmt.Fprintf(f, "    var req %s\n", r.Req)
@@ -230,6 +220,7 @@ func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
 		fmt.Fprintln(f, "  })")
 	}
 	fmt.Fprintln(f, "}")
+
 	return formatFile(f)
 }
 
@@ -243,17 +234,17 @@ func writeClient(pkgDir, srvName string, rpcs []rpcDef) error {
 
 	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
 	fmt.Fprintln(f, `import (`)
-	fmt.Fprintln(f, `"context"`)
-	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
+	fmt.Fprintln(f, `  "context"`)
+	fmt.Fprintln(f, `  wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
 	fmt.Fprintln(f, `)`)
 
-	fmt.Fprintf(f, "type %sClient struct {\n  c *wellib.RPCClient\n}\n\n", srvName)
+	fmt.Fprintf(f, "\ntype %sClient struct {\n  c *wellib.RPCClient\n}\n\n", srvName)
 	fmt.Fprintf(f, "func New%sClient(addr string) *%sClient {\n", srvName, srvName)
 	fmt.Fprintln(f, "  conn, _ := wellib.Dial(addr, nil)")
-	fmt.Fprintf(f, "  return &%sClient{c: conn}\n}\n\n", srvName)
+	fmt.Fprintf(f, "  return &%sClient{c: conn}\n}\n", srvName)
 
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "func (c *%sClient) %s(ctx context.Context, req *%s) (*%s, error) {\n", srvName, r.Method, r.Req, r.Res)
+		fmt.Fprintf(f, "\nfunc (c *%sClient) %s(ctx context.Context, req *%s) (*%s, error) {\n", srvName, r.Method, r.Req, r.Res)
 		fmt.Fprintf(f, "  var out %s\n", r.Res)
 		fmt.Fprintf(f, "  if err := c.c.Call(ctx, \"%s.%s\", req, &out); err != nil { return nil, err }\n", srvName, r.Method)
 		fmt.Fprintln(f, "  return &out, nil")
@@ -261,6 +252,17 @@ func writeClient(pkgDir, srvName string, rpcs []rpcDef) error {
 	}
 
 	return formatFile(f)
+}
+
+func mapType(t string) string {
+	switch t {
+	case "int64", "int32", "float32", "float64", "string", "bool":
+		return t
+	case "bytes":
+		return "[]byte"
+	default:
+		return "*" + t
+	}
 }
 
 func formatFile(f *os.File) error {
