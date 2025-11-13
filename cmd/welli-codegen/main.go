@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,10 +17,21 @@ type rpcDef struct {
 	Res    string
 }
 
+type messageDef struct {
+	Name   string
+	Fields []fieldDef
+}
+
+type fieldDef struct {
+	Name string
+	Type string
+	Tag  int
+}
+
 func main() {
 	var idlDir, outDir string
-	flag.StringVar(&idlDir, "idl-dir", "examples", "Directory to scan for IDL files (*.wb.idl)")
-	flag.StringVar(&outDir, "out-dir", "pkg/wellsrpc/codec_generated", "Output directory")
+	flag.StringVar(&idlDir, "idl-dir", "./idl", "Directory to scan for IDL files (*.wb.idl)")
+	flag.StringVar(&outDir, "out-dir", "./pkg/wellsrpc/codec_generated", "Output directory")
 	flag.Parse()
 
 	files := []string{}
@@ -53,8 +65,15 @@ func generateService(idlPath, outBase string) error {
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	var srvName string
 	rpcs := []rpcDef{}
+	messages := []messageDef{}
+
 	serviceRe := regexp.MustCompile(`^service\s+(\w+)`)
 	rpcRe := regexp.MustCompile(`rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s*returns\s*\(\s*(\w+)\s*\)`)
+	messageRe := regexp.MustCompile(`^message\s+(\w+)`)
+	fieldRe := regexp.MustCompile(`^(\w+)\s+(\w+)`)
+
+	var currentMsg *messageDef
+	tagCounter := 1
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -64,6 +83,25 @@ func generateService(idlPath, outBase string) error {
 		if m := rpcRe.FindStringSubmatch(line); m != nil {
 			rpcs = append(rpcs, rpcDef{Method: m[1], Req: m[2], Res: m[3]})
 		}
+		if m := messageRe.FindStringSubmatch(line); m != nil {
+			if currentMsg != nil {
+				messages = append(messages, *currentMsg)
+			}
+			currentMsg = &messageDef{Name: m[1], Fields: []fieldDef{}}
+			tagCounter = 1
+		} else if currentMsg != nil {
+			if f := fieldRe.FindStringSubmatch(line); f != nil {
+				currentMsg.Fields = append(currentMsg.Fields, fieldDef{
+					Type: f[1],
+					Name: f[2],
+					Tag:  tagCounter,
+				})
+				tagCounter++
+			}
+		}
+	}
+	if currentMsg != nil {
+		messages = append(messages, *currentMsg)
 	}
 
 	if srvName == "" || len(rpcs) == 0 {
@@ -75,79 +113,146 @@ func generateService(idlPath, outBase string) error {
 		return err
 	}
 
-	outFile := filepath.Join(pkgDir, strings.ToLower(srvName)+".pb.go")
-	f, err := os.Create(outFile)
+	// generate codec.go
+	if err := writeCodec(pkgDir, messages); err != nil {
+		return err
+	}
+	// generate server.go
+	if err := writeServer(pkgDir, srvName, rpcs); err != nil {
+		return err
+	}
+	// generate client.go
+	if err := writeClient(pkgDir, srvName, rpcs); err != nil {
+		return err
+	}
+
+	fmt.Println("Generated service:", srvName, "at", pkgDir)
+	return nil
+}
+
+func writeCodec(pkgDir string, messages []messageDef) error {
+	file := filepath.Join(pkgDir, "codec.go")
+	f, err := os.Create(file)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	writeHeader(f, srvName)
-	writeServer(f, srvName, rpcs)
-	writeClient(f, srvName, rpcs)
-	writeHelper(f, srvName, rpcs)
+	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
+	fmt.Fprintln(f, `import (`)
+	fmt.Fprintln(f, `"errors"`)
+	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
+	fmt.Fprintln(f, ")")
+	fmt.Fprintln(f, "")
 
-	fmt.Println("Generated:", outFile)
-	return nil
+	for _, msg := range messages {
+		fmt.Fprintf(f, "type %s struct {\n", msg.Name)
+		for _, field := range msg.Fields {
+			fmt.Fprintf(f, "  %s %s\n", strings.Title(field.Name), mapType(field.Type))
+		}
+		fmt.Fprintln(f, "}")
+		fmt.Fprintln(f, "")
+		// Marshal/Unmarshal skeleton
+		fmt.Fprintf(f, "func (m *%s) MarshalWells() []byte { return nil }\n", msg.Name)
+		fmt.Fprintf(f, "func (m *%s) UnmarshalWells(b []byte) error { return nil }\n\n", msg.Name)
+	}
+
+	return formatFile(f)
 }
 
-func writeHeader(f *os.File, srvName string) {
-	fmt.Fprintln(f, "package", strings.ToLower(srvName))
+func mapType(t string) string {
+	switch t {
+	case "int64":
+		return "int64"
+	case "int32":
+		return "int32"
+	case "float32":
+		return "float32"
+	case "float64":
+		return "float64"
+	case "string":
+		return "string"
+	case "bool":
+		return "bool"
+	default:
+		return "*" + t
+	}
+}
+
+func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
+	file := filepath.Join(pkgDir, "server.go")
+	f, err := os.Create(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
 	fmt.Fprintln(f, `import (`)
 	fmt.Fprintln(f, `"context"`)
 	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
 	fmt.Fprintln(f, ")")
 	fmt.Fprintln(f, "")
-}
 
-func writeServer(f *os.File, srvName string, rpcs []rpcDef) {
-	fmt.Fprintf(f, "type %sServer interface {", srvName)
+	fmt.Fprintf(f, "type %sServer interface {\n", srvName)
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "  %s(ctx context.Context, req *%s) (*%s, error)", r.Method, r.Req, r.Res)
+		fmt.Fprintf(f, "  %s(ctx context.Context, req *%s) (*%s, error)\n", r.Method, r.Req, r.Res)
 	}
-	fmt.Fprintln(f, "}")
+	fmt.Fprintln(f, "}\n")
 
-	fmt.Fprintf(f, "func NewServer(impl %sServer) *wellib.RPCServer {", srvName)
-	fmt.Fprintln(f, "  srv := wellib.NewRPCServer()")
+	fmt.Fprintf(f, "func Register%sServer(srv *wellib.RPCServer, impl %sServer) {\n", srvName, srvName)
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "  srv.Register(\"%s.%s\", func(ctx context.Context, payload []byte) ([]byte, error) {", srvName, r.Method)
-		fmt.Fprintf(f, "    var req %s", r.Req)
+		fmt.Fprintf(f, "  srv.Register(\"%s.%s\", func(ctx context.Context, payload []byte) ([]byte, error) {\n", srvName, r.Method)
+		fmt.Fprintf(f, "    var req %s\n", r.Req)
 		fmt.Fprintln(f, "    if err := req.UnmarshalWells(payload); err != nil { return nil, err }")
-		fmt.Fprintf(f, "    resp, err := impl.%s(ctx, &req)", r.Method)
+		fmt.Fprintf(f, "    resp, err := impl.%s(ctx, &req)\n", r.Method)
 		fmt.Fprintln(f, "    if err != nil { return nil, err }")
 		fmt.Fprintln(f, "    return resp.MarshalWells(), nil")
 		fmt.Fprintln(f, "  })")
 	}
-	fmt.Fprintln(f, "  return srv}")
+	fmt.Fprintln(f, "}")
+	return formatFile(f)
+}
+
+func writeClient(pkgDir, srvName string, rpcs []rpcDef) error {
+	file := filepath.Join(pkgDir, "client.go")
+	f, err := os.Create(file)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	fmt.Fprintf(f, "package %s\n\n", filepath.Base(pkgDir))
+	fmt.Fprintln(f, `import (`)
+	fmt.Fprintln(f, `"context"`)
+	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
+	fmt.Fprintln(f, ")")
 	fmt.Fprintln(f, "")
-}
 
-func writeClient(f *os.File, srvName string, rpcs []rpcDef) {
-	fmt.Fprintf(f, "type Client struct { c *wellib.RPCClient }")
-	fmt.Fprintf(f, "func NewClient(addr string) *Client {")
-	fmt.Fprintf(f, "  conn, _ := wellib.Dial(addr, nil)")
-	fmt.Fprintf(f, "  return &Client{c: conn}")
-	fmt.Fprintln(f, "}")
+	fmt.Fprintf(f, "type %sClient struct {\n  c *wellib.RPCClient\n}\n\n", srvName)
+	fmt.Fprintf(f, "func New%sClient(addr string) *%sClient {\n", srvName, srvName)
+	fmt.Fprintln(f, "  conn, _ := wellib.Dial(addr, nil)")
+	fmt.Fprintf(f, "  return &%sClient{c: conn}\n}\n\n", srvName)
 
 	for _, r := range rpcs {
-		fmt.Fprintf(f, "func (c *Client) %s(ctx context.Context, req *%s) (*%s, error) {", r.Method, r.Req, r.Res)
-		fmt.Fprintf(f, "  var out %s", r.Res)
-		fmt.Fprintf(f, "  if err := c.c.Call(ctx, \"%s.%s\", req, &out); err != nil { return nil, err }", srvName, r.Method)
+		fmt.Fprintf(f, "func (c *%sClient) %s(ctx context.Context, req *%s) (*%s, error) {\n", srvName, r.Method, r.Req, r.Res)
+		fmt.Fprintf(f, "  var out %s\n", r.Res)
+		fmt.Fprintf(f, "  if err := c.c.Call(ctx, \"%s.%s\", req, &out); err != nil { return nil, err }\n", srvName, r.Method)
 		fmt.Fprintln(f, "  return &out, nil")
-		fmt.Fprintln(f, "}")
+		fmt.Fprintln(f, "}\n")
 	}
+
+	return formatFile(f)
 }
 
-func writeHelper(f *os.File, srvName string, rpcs []rpcDef) {
-	fmt.Fprintf(f, "// High-level simple client")
-	fmt.Fprintf(f, "type SimpleClient struct { client *Client }")
-	fmt.Fprintf(f, "func NewSimpleClient(addr string) *SimpleClient {")
-	fmt.Fprintf(f, "  return &SimpleClient{client: NewClient(addr)}")
-	fmt.Fprintln(f, "}")
-
-	for _, r := range rpcs {
-		fmt.Fprintf(f, "func (s *SimpleClient) %s(ctx context.Context, req *%s) (*%s, error) {", r.Method, r.Req, r.Res)
-		fmt.Fprintln(f, "  return s.client."+r.Method+"(ctx, req)")
-		fmt.Fprintln(f, "}")
+func formatFile(f *os.File) error {
+	data, err := os.ReadFile(f.Name())
+	if err != nil {
+		return err
 	}
+	formatted, err := format.Source(data)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(f.Name(), formatted, 0644)
 }
