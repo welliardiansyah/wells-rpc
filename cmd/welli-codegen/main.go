@@ -142,8 +142,8 @@ func writeCodec(pkgDir string, messages []messageDef) error {
 	fmt.Fprintln(f, `import (`)
 	fmt.Fprintln(f, `"errors"`)
 	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
-	fmt.Fprintln(f, ")")
-	fmt.Fprintln(f, "")
+	fmt.Fprintln(f, `)`)
+	fmt.Fprintln(f) // Diperbaiki: menghapus \n berlebihan
 
 	for _, msg := range messages {
 		fmt.Fprintf(f, "type %s struct {\n", msg.Name)
@@ -151,7 +151,7 @@ func writeCodec(pkgDir string, messages []messageDef) error {
 			fmt.Fprintf(f, "  %s %s\n", strings.Title(field.Name), mapType(field.Type))
 		}
 		fmt.Fprintln(f, "}")
-		fmt.Fprintln(f, "")
+		fmt.Fprintln(f)
 		// Marshal/Unmarshal skeleton
 		fmt.Fprintf(f, "func (m *%s) MarshalWells() []byte { return nil }\n", msg.Name)
 		fmt.Fprintf(f, "func (m *%s) UnmarshalWells(b []byte) error { return nil }\n\n", msg.Name)
@@ -191,8 +191,8 @@ func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
 	fmt.Fprintln(f, `import (`)
 	fmt.Fprintln(f, `"context"`)
 	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
-	fmt.Fprintln(f, ")")
-	fmt.Fprintln(f, "")
+	fmt.Fprintln(f, `)`)
+	fmt.Fprintln(f) // Diperbaiki: menghapus \n berlebihan
 
 	fmt.Fprintf(f, "type %sServer interface {\n", srvName)
 	for _, r := range rpcs {
@@ -226,8 +226,8 @@ func writeClient(pkgDir, srvName string, rpcs []rpcDef) error {
 	fmt.Fprintln(f, `import (`)
 	fmt.Fprintln(f, `"context"`)
 	fmt.Fprintln(f, `wellib "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"`)
-	fmt.Fprintln(f, ")")
-	fmt.Fprintln(f, "")
+	fmt.Fprintln(f, `)`)
+	fmt.Fprintln(f)
 
 	fmt.Fprintf(f, "type %sClient struct {\n  c *wellib.RPCClient\n}\n\n", srvName)
 	fmt.Fprintf(f, "func New%sClient(addr string) *%sClient {\n", srvName, srvName)
