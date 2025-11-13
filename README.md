@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="./asset/wellsrpc-overview.png" alt="WellsRPC Overview" width="650">
+  <img src="./assets/logo.png" alt="WellsRPC Overview" width="650">
 </p>
 
 <hr>
