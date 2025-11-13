@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	codec "wells-rpc/pkg/wellsrpc/codec_generated"
+	codec "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc/codec_generated"
 )
 
 func generateDummyData() *codec.SensorReading {

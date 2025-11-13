@@ -3,7 +3,7 @@ package codecgenerated
 import (
 	"errors"
 
-	wellsrpc "wells-rpc/pkg/wellsrpc"
+	wellsrpc "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"
 )
 
 type SensorReading struct {

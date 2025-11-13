@@ -1,4 +1,4 @@
-package wellib
+package wellsrpc
 
 type WelliMarshaller interface {
 	MarshalWelli() []byte
