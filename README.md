@@ -223,6 +223,87 @@ func main() {
 }
 </code></pre>
 
+<h2 id="idl-and-code-generation">📝 IDL & Code Generation</h2>
+
+<p>Define schema in <code>.wb.idl</code> file:</p>
+<pre><code>message SensorReading {
+  1: int64 timestamp;
+  2: float32 temperature;
+  3: float32 humidity;
+  4: bytes payload;
+}
+
+message Ack {
+  1: bool success;
+}
+
+service SensorService {
+  rpc SendSensorData(SensorReading) returns (Ack);
+}
+</code></pre>
+
+<p>Generate Go structs & RPC stubs:</p>
+<pre><code>cd wells-rpc
+go run cmd/welli-codegen/main.go examples/sensor/sensor.wb.idl
+</code></pre>
+
+<p>Generated files are placed in <code>pkg/wellsrpc/codec_generated/</code> and include:</p>
+<ul>
+  <li>Structs with <code>MarshalWells()</code> & <code>UnmarshalWells()</code></li>
+  <li>RPC client & server stubs</li>
+  <li><strong>High-level simple client/server helpers</strong> for direct usage</li>
+</ul>
+
+<h3>Simple Usage (High-Level Helper)</h3>
+
+<p>Instead of manually registering server or calling method strings, you can use the generated helper:</p>
+
+<pre><code>import (
+    "context"
+    "fmt"
+    "time"
+
+    sensorpb "yourproject/pkg/wellsrpc/codec_generated/sensor"
+)
+
+// Server
+srv := sensorpb.NewServer(&MySensorServer{}) // implements SensorServiceServer
+srv.ListenAndServe(":9000")                  // simple server startup
+
+// Client
+cli := sensorpb.NewSimpleClient("localhost:9000")
+resp, err := cli.SendSensorData(context.Background(), &sensorpb.SensorReading{
+    Timestamp:   time.Now().Unix(),
+    Temperature: 26.5,
+    Humidity:    60,
+    Payload:     []byte("abc"),
+})
+if err != nil {
+    panic(err)
+}
+fmt.Println("Server response:", resp.Success)
+</code></pre>
+
+<p>✅ Benefits of High-Level Helpers:</p>
+<ul>
+  <li>No need to manually handle service+method strings</li>
+  <li>Simple server startup and client calls</li>
+  <li>Automatically type-safe RPC calls</li>
+  <li>Supports multiple services generated from multiple IDL files</li>
+</ul>
+
+<h3>Command for Auto-Generation (Multiple IDL Files)</h3>
+<pre><code>go run cmd/welli-codegen/main.go --idl-dir examples --out-dir pkg/wellsrpc/codec_generated
+</code></pre>
+
+<p>This command will:</p>
+<ul>
+  <li>Scan all <code>.wb.idl</code> files in <code>examples/</code></li>
+  <li>Generate a package per service</li>
+  <li>Include structs, RPC stubs, and simple client/server helpers</li>
+</ul>
+
+
 <h2 id="workflow-diagram">📊 Workflow Diagram</h2>
 
 <p>WellsRPC flow from IDL to simple client/server usage:</p>
