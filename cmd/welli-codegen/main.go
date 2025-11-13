@@ -198,7 +198,7 @@ func writeServer(pkgDir, srvName string, rpcs []rpcDef) error {
 	for _, r := range rpcs {
 		fmt.Fprintf(f, "  %s(ctx context.Context, req *%s) (*%s, error)\n", r.Method, r.Req, r.Res)
 	}
-	fmt.Fprintln(f, "}\n")
+	fmt.Fprintln(f, "}")
 
 	fmt.Fprintf(f, "func Register%sServer(srv *wellib.RPCServer, impl %sServer) {\n", srvName, srvName)
 	for _, r := range rpcs {
@@ -239,7 +239,7 @@ func writeClient(pkgDir, srvName string, rpcs []rpcDef) error {
 		fmt.Fprintf(f, "  var out %s\n", r.Res)
 		fmt.Fprintf(f, "  if err := c.c.Call(ctx, \"%s.%s\", req, &out); err != nil { return nil, err }\n", srvName, r.Method)
 		fmt.Fprintln(f, "  return &out, nil")
-		fmt.Fprintln(f, "}\n")
+		fmt.Fprintln(f, "}")
 	}
 
 	return formatFile(f)
