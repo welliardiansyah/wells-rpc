@@ -224,7 +224,7 @@ func main() {
 
 <h2 id="benchmark">⚙️ Benchmark</h2>
 <pre><code>cd benchmark
-go test -bench=. -benchmem
+go test ./benchmark -bench=. -benchmem
 </code></pre>
 
 <p>Example output:</p>
