@@ -223,7 +223,7 @@ func main() {
 </code></pre>
 
 <h2 id="benchmark">⚙️ Benchmark</h2>
-<pre><code>cd benchmark
+<pre><code>
 go test ./benchmark -bench=. -benchmem
 </code></pre>
 
