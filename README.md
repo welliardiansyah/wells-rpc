@@ -5,6 +5,11 @@
   <img src="https://img.shields.io/badge/license-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build Status">
   <img src="https://img.shields.io/badge/tests-100%25-blue" alt="Test Coverage">
+  <br/>
+  <img src="https://img.shields.io/badge/RPC-Binary%20Frame-blueviolet">
+  <img src="https://img.shields.io/badge/Idempotency-Supported-success">
+  <img src="https://img.shields.io/badge/Interceptors-Client%20%26%20Server-orange">
+  <img src="https://img.shields.io/badge/Core--Banking-Ready-red">
 </p>
 
 <p align="center">
@@ -25,11 +30,14 @@
   <li><a href="#project-structure">Project Structure</a></li>
   <li><a href="#installation">Installation</a></li>
   <li><a href="#usage">Usage</a></li>
+  <li><a href="#interceptors">Interceptors</a></li>
+  <li><a href="#idempotency">Idempotency</a></li>
   <li><a href="#idl-and-code-generation">IDL & Code Generation</a></li>
   <li><a href="#example-producer-and-consumer">Example Producer & Consumer</a></li>
   <li><a href="#workflow-diagram">Workflow Diagram</a></li>
   <li><a href="#benchmark">Benchmark</a></li>
   <li><a href="#testing">Testing</a></li>
+  <li><a href="#production-readiness">Production Readiness</a></li>
   <li><a href="#development-workflow">Development Workflow</a></li>
   <li><a href="#contributing">Contributing</a></li>
   <li><a href="#license">License</a></li>
@@ -47,6 +55,17 @@
 </ul>
 <p>It is optimized for <b>speed, low memory footprint, and minimal dependencies</b>.</p>
 
+<p>
+  Beyond a traditional RPC framework, <strong>WellsRPC</strong> is designed with
+  <b>enterprise and financial-grade guarantees</b> in mind:
+</p>
+<ul>
+  <li>Frame-based metadata propagation (trace-id, deadline, idempotency-key)</li>
+  <li>Built-in idempotency for retry-safe operations</li>
+  <li>Client & server interceptors</li>
+  <li>Semantic RPC errors (retryable vs non-retryable)</li>
+</ul>
+
 <h2 id="features">🚀 Features</h2>
 <ul>
   <li>Marshal/Unmarshal structs to binary efficiently</li>
@@ -54,329 +73,105 @@
   <li>IDL-driven code generation for Go RPC client/server</li>
   <li>Cross-language compatible (Go ↔ Java)</li>
   <li>Lightweight RPC client & server with streaming support</li>
-  <li>TCP transport, with optional TLS</li>
+  <li>TCP transport, with optional TLS (mTLS)</li>
   <li>Minimal dependencies</li>
+  <li><b>Frame-based protocol</b> with extensible metadata</li>
+  <li><b>Unary & streaming interceptors</b></li>
+  <li><b>Idempotency support</b></li>
+  <li><b>Deadline propagation</b></li>
+  <li><b>Core-banking ready design</b></li>
 </ul>
 
 <h2 id="project-structure">🗂️ Project Structure</h2>
 <pre>
 wells-rpc/
-├── pkg/wellsrpc/               # Core library
+├── pkg/wellsrpc/
 │   ├── client.go
-│   ├── encode.go
-│   ├── frame.go
-│   ├── interceptor.go
-│   ├── netmsg.go
-│   ├── pool.go
 │   ├── server.go
+│   ├── frame.go
 │   ├── stream.go
+│   ├── interceptor.go
+│   ├── idempotency.go
+│   ├── error.go
+│   ├── pool.go
+│   ├── encode.go
 │   ├── varint.go
-│   └── codec_generated/        # Generated structs & RPC stubs
-│       └── sensor.go
-├── cmd/welli-codegen/          # CLI for IDL -> Go code
+│   └── codec_generated/
+│       └── *.wells.go
+├── cmd/welli-codegen/
 │   └── main.go
-├── examples/                   # Example producer & consumer
-│   ├── producer/main.go
-│   └── consumer/main.go
-├── examples/sensor/
-│   └── sensor.wb.idl           # IDL file
+├── examples/
+│   ├── producer/
+│   ├── consumer/
+│   └── sensor/
+│       └── sensor.wb.idl
 └── benchmark/
-    └── wells_bench_test.go
+    └── main_test.go
 </pre>
 
 <h2 id="installation">🛠️ Installation</h2>
 
 <h3>Prerequisites</h3>
 <ul>
-  <li>Go 1.18 or higher</li>
+  <li>Go 1.18+</li>
   <li>Git</li>
 </ul>
 
-<h3>Install WellsRPC</h3>
-<pre><code>go get github.com/welliardiansyah/wells-rpc
-</code></pre>
+<pre><code>go get github.com/welliardiansyah/wells-rpc</code></pre>
 
 <h2 id="usage">⚡ Usage</h2>
 
 <h3>Encode & Decode Struct</h3>
-<pre><code>package main
+<pre><code>s := &codec_generated.SensorReading{...}
+data := s.MarshalWells()
+_ = s.UnmarshalWells(data)</code></pre>
 
-import (
-    "fmt"
-    "time"
-    "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc/codec_generated"
-)
+<h2 id="interceptors">🧩 Interceptors</h2>
+<p>
+Interceptors allow logging, tracing, auth, rate-limit, retries, and auditing
+without touching business logic.
+</p>
 
-func main() {
-    s := &codec_generated.SensorReading{
-        Timestamp:   time.Now().Unix(),
-        Temperature: 25.5,
-        Humidity:    60,
-        Payload:     []byte("payload-abc"),
-    }
+<pre><code>srv.UseUnaryInterceptor(func(ctx context.Context, f *wellsrpc.Frame, next func(context.Context,*wellsrpc.Frame)(*wellsrpc.Frame,error)) (*wellsrpc.Frame,error) {
+  log.Println("method:", f.Method)
+  return next(ctx, f)
+})</code></pre>
 
-    // Encode
-    data := s.MarshalWells()
-    fmt.Println("Encoded data:", data)
+<h2 id="idempotency">🔁 Idempotency</h2>
+<p>
+WellsRPC guarantees retry-safe execution using idempotency keys.
+</p>
 
-    // Decode
-    s2 := &codec_generated.SensorReading{}
-    if err := s2.UnmarshalWells(data); err != nil {
-        panic(err)
-    }
-    fmt.Println("Decoded struct:", s2)
-}
-</code></pre>
-
-<h2 id="idl-and-code-generation">📝 IDL & Code Generation</h2>
-
-<p>Define schema in <code>.wb.idl</code> file:</p>
-<pre><code>message SensorReading {
-  1: int64 timestamp;
-  2: float32 temperature;
-  3: float32 humidity;
-  4: bytes payload;
-}
-
-message Ack {
-  1: bool success;
-}
-
-service SensorService {
-  rpc SendSensorData(SensorReading) returns (Ack);
-}
-</code></pre>
-
-<p>Generate Go structs & RPC stubs:</p>
-<pre><code>cd wells-rpc
-go run cmd/welli-codegen/main.go examples/sensor/sensor.wb.idl
-</code></pre>
-
-<p>Generated files are placed in <code>pkg/wellsrpc/codec_generated/</code> and include:</p>
-<ul>
-  <li>Structs with <code>MarshalWells()</code> & <code>UnmarshalWells()</code></li>
-  <li>RPC client & server stubs with simple call methods</li>
-</ul>
-
-<h2 id="example-producer-and-consumer">📦 Example Producer & Consumer</h2>
-
-<h3>Producer Example</h3>
-<pre><code>package main
-
-import (
-    "context"
-    "fmt"
-    "time"
-
-    "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"
-    "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc/codec_generated"
-)
-
-func main() {
-    client, err := wellsrpc.Dial("127.0.0.1:9000", nil)
-    if err != nil {
-        panic(err)
-    }
-    defer client.Close()
-
-    req := &codec_generated.SensorReading{
-        Timestamp:   time.Now().Unix(),
-        Temperature: 27,
-        Humidity:    55,
-        Payload:     []byte("test"),
-    }
-
-    resp := &codec_generated.Ack{}
-    if err := client.Call(context.Background(), "SensorService.SendSensorData", req, resp); err != nil {
-        panic(err)
-    }
-
-    fmt.Println("Server response:", resp.Success)
-}
-</code></pre>
-
-<h3>Server Example</h3>
-<pre><code>package main
-
-import (
-    "context"
-    "fmt"
-
-    "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc"
-    "github.com/welliardiansyah/wells-rpc/pkg/wellsrpc/codec_generated"
-)
-
-type sensorServer struct{}
-
-func (s *sensorServer) SendSensorData(ctx context.Context, req *codec_generated.SensorReading) (*codec_generated.Ack, error) {
-    fmt.Println("Received:", req)
-    return &codec_generated.Ack{Success: true}, nil
-}
-
-func main() {
-    srv := wellsrpc.NewRPCServer()
-    codec_generated.RegisterSensorService(srv, &sensorServer{})
-    fmt.Println("Server listening on :9000")
-    if err := srv.Serve(":9000"); err != nil {
-        panic(err)
-    }
-}
-</code></pre>
-
-<h2 id="idl-and-code-generation">📝 IDL & Code Generation</h2>
-
-<p>Define schema in <code>.wb.idl</code> file:</p>
-<pre><code>message SensorReading {
-  1: int64 timestamp;
-  2: float32 temperature;
-  3: float32 humidity;
-  4: bytes payload;
-}
-
-message Ack {
-  1: bool success;
-}
-
-service SensorService {
-  rpc SendSensorData(SensorReading) returns (Ack);
-}
-</code></pre>
-
-<p>Generate Go structs & RPC stubs:</p>
-<pre><code>cd wells-rpc
-go run cmd/welli-codegen/main.go examples/sensor/sensor.wb.idl
-</code></pre>
-
-<p>Generated files are placed in <code>pkg/wellsrpc/codec_generated/</code> and include:</p>
-<ul>
-  <li>Structs with <code>MarshalWells()</code> & <code>UnmarshalWells()</code></li>
-  <li>RPC client & server stubs</li>
-  <li><strong>High-level simple client/server helpers</strong> for direct usage</li>
-</ul>
-
-<h3>Simple Usage (High-Level Helper)</h3>
-
-<p>Instead of manually registering server or calling method strings, you can use the generated helper:</p>
-
-<pre><code>import (
-    "context"
-    "fmt"
-    "time"
-
-    sensorpb "yourproject/pkg/wellsrpc/codec_generated/sensor"
-)
-
-// Server
-srv := sensorpb.NewServer(&MySensorServer{}) // implements SensorServiceServer
-srv.ListenAndServe(":9000")                  // simple server startup
-
-// Client
-cli := sensorpb.NewSimpleClient("localhost:9000")
-resp, err := cli.SendSensorData(context.Background(), &sensorpb.SensorReading{
-    Timestamp:   time.Now().Unix(),
-    Temperature: 26.5,
-    Humidity:    60,
-    Payload:     []byte("abc"),
-})
-if err != nil {
-    panic(err)
-}
-fmt.Println("Server response:", resp.Success)
-</code></pre>
-
-<p>✅ Benefits of High-Level Helpers:</p>
-<ul>
-  <li>No need to manually handle service+method strings</li>
-  <li>Simple server startup and client calls</li>
-  <li>Automatically type-safe RPC calls</li>
-  <li>Supports multiple services generated from multiple IDL files</li>
-</ul>
-
-<h3>Command for Auto-Generation (Multiple IDL Files)</h3>
-<pre><code>go run cmd/welli-codegen/main.go --idl-dir examples --out-dir pkg/wellsrpc/codec_generated
-</code></pre>
-
-<p>This command will:</p>
-<ul>
-  <li>Scan all <code>.wb.idl</code> files in <code>examples/</code></li>
-  <li>Generate a package per service</li>
-  <li>Include structs, RPC stubs, and simple client/server helpers</li>
-</ul>
-
-
-<h2 id="workflow-diagram">📊 Workflow Diagram</h2>
-
-<p>WellsRPC flow from IDL to simple client/server usage:</p>
-
-<pre><code>
-       +-----------------+
-       |  .wb.idl File   |
-       | (Service/Message|
-       |   Definitions)  |
-       +--------+--------+
-                |
-                | go run cmd/welli-codegen/main.go
-                v
-       +------------------------+
-       |  Generated Go Package  |
-       | pkg/wellsrpc/codec_generated/
-       |------------------------|
-       | - Structs             |
-       | - RPC Server Stubs     |
-       | - RPC Client Stubs     |
-       | - Simple Client/Server |
-       +----------+-------------+
-                  |
-      +-----------+-----------+
-      |                       |
-      v                       v
-+------------+          +---------------+
-| RPC Server |          | Simple Client |
-| (Register  | <------- | (Auto-call    |
-|   Services)|          | methods)      |
-+------------+          +---------------+
-      |                       ^
-      | Serve & Listen         |
-      +-----------------------+
-      | Client Requests        |
-      v
-  +---------------+
-  |   Business    |
-  |   Logic       |
-  +---------------+
-</code></pre>
-
-<p>With auto-generated client & server stubs, you can call RPC methods directly via typed functions without manual serialization.</p>
+<pre><code>ctx := context.WithValue(context.Background(), "idempotency-key", "payment-001")
+client.Call(ctx, "PaymentService.Transfer", req, resp)</code></pre>
 
 <h2 id="benchmark">⚙️ Benchmark</h2>
-<pre><code>
-go test ./benchmark -bench=. -benchmem
-</code></pre>
-
-<p>Example output:</p>
-<pre><code>
-BenchmarkWellsRpc_Encode-8        15384214   75 ns/op    32 B/op   1 allocs/op
-BenchmarkWellsRpc_Decode-8        9546022    110 ns/op   48 B/op   2 allocs/op
-BenchmarkJSON_Encode-8            712413     1680 ns/op  480 B/op   6 allocs/op
-BenchmarkJSON_Decode-8            545829     2060 ns/op  550 B/op   8 allocs/op
-</code></pre>
+<pre><code>go test ./benchmark -bench=. -benchmem</code></pre>
 
 <h2 id="testing">🧪 Testing</h2>
 <pre><code>go test ./...
-</code></pre>
+go test -race ./...</code></pre>
+
+<h2 id="production-readiness">🏦 Production Readiness</h2>
+<ul>
+  <li>Retry-safe idempotent calls</li>
+  <li>Semantic error handling</li>
+  <li>mTLS support</li>
+  <li>Low-latency binary protocol</li>
+  <li>Safe for payment & ledger systems</li>
+</ul>
 
 <h2 id="development-workflow">🛠 Development Workflow</h2>
 <ol>
-  <li>Write schema in <code>.wb.idl</code></li>
-  <li>Run codegen to generate Go structs & RPC stubs</li>
-  <li>Implement producer/consumer using <code>MarshalWells()</code>/<code>UnmarshalWells()</code></li>
-  <li>Call RPC methods directly via auto-generated client functions</li>
-  <li>Write unit tests and benchmarks</li>
-  <li>Publish updates via GitHub & Go modules</li>
+  <li>Define schema in <code>.wb.idl</code></li>
+  <li>Generate code</li>
+  <li>Implement business logic</li>
+  <li>Test & benchmark</li>
+  <li>Release</li>
 </ol>
 
 <h2 id="contributing">🤝 Contributing</h2>
-<p>Contributions are welcome! Fork the repo, create a feature branch, and submit a pull request.</p>
+<p>PRs are welcome.</p>
 
 <h2 id="license">📄 License</h2>
-<p>MIT License - see <a href="https://github.com/welliardiansyah/wells-rpc/blob/main/LICENSE.md">LICENSE</a> for details.</p>
+<p>MIT License.</p>

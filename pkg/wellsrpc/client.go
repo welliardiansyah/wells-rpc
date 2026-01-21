@@ -72,6 +72,9 @@ func (c *RPCClient) nextStreamID() uint32 {
 	return v
 }
 
+// =======================
+// Read loop
+// =======================
 func (c *RPCClient) readLoop() {
 	for {
 		select {
@@ -85,7 +88,10 @@ func (c *RPCClient) readLoop() {
 			c.mu.Lock()
 			for _, p := range c.pending {
 				select {
-				case p.ch <- &Frame{Type: FrameTypeError, Payload: []byte(err.Error())}:
+				case p.ch <- &Frame{
+					Type:    FrameTypeError,
+					Payload: []byte(err.Error()),
+				}:
 				default:
 				}
 			}
@@ -93,6 +99,7 @@ func (c *RPCClient) readLoop() {
 			return
 		}
 
+		// Unary response
 		c.mu.Lock()
 		p := c.pending[frame.StreamID]
 		c.mu.Unlock()
@@ -104,6 +111,7 @@ func (c *RPCClient) readLoop() {
 			continue
 		}
 
+		// Stream response
 		c.streamsMu.Lock()
 		st := c.streams[frame.StreamID]
 		c.streamsMu.Unlock()
@@ -124,29 +132,65 @@ func (c *RPCClient) readLoop() {
 	}
 }
 
+// =======================
+// Interceptor registration
+// =======================
 func (c *RPCClient) UseUnaryInterceptor(i UnaryClientInterceptor) {
 	c.unaryInterceptors = append(c.unaryInterceptors, i)
 }
 
-func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller, resp WelliMarshaller) error {
-	reqData := req.MarshalWells()
+// =======================
+// Unary Call (FRAME-BASED)
+// =======================
+func (c *RPCClient) Call(
+	ctx context.Context,
+	method string,
+	req WelliMarshaller,
+	resp WelliMarshaller,
+) error {
 
-	invoke := func(ctx context.Context, payload []byte) ([]byte, error) {
-		streamID := c.nextStreamID()
-		p := &pendingResponse{ch: make(chan *Frame, 1)}
+	// -----------------------
+	// Prepare frame
+	// -----------------------
+	streamID := c.nextStreamID()
 
+	meta := map[string]string{
+		"rpc.method": method,
+	}
+
+	// propagate deadline
+	if dl, ok := ctx.Deadline(); ok {
+		meta["deadline"] = dl.Format(time.RFC3339Nano)
+	}
+
+	frame := &Frame{
+		Type:     FrameTypeRequest,
+		StreamID: streamID,
+		Method:   method,
+		Metadata: meta,
+		Payload:  req.MarshalWells(),
+	}
+
+	// -----------------------
+	// Pending response slot
+	// -----------------------
+	p := &pendingResponse{ch: make(chan *Frame, 1)}
+	c.mu.Lock()
+	c.pending[streamID] = p
+	c.mu.Unlock()
+
+	defer func() {
 		c.mu.Lock()
-		c.pending[streamID] = p
+		delete(c.pending, streamID)
 		c.mu.Unlock()
-		defer func() {
-			c.mu.Lock()
-			delete(c.pending, streamID)
-			c.mu.Unlock()
-		}()
+	}()
 
-		f := &Frame{Type: FrameTypeRequest, StreamID: streamID, Method: method, Payload: payload}
+	// -----------------------
+	// Base invoke
+	// -----------------------
+	invoke := func(ctx context.Context, fr *Frame) (*Frame, error) {
 		c.mu.Lock()
-		err := WriteFrame(c.conn, f)
+		err := WriteFrame(c.conn, fr)
 		c.mu.Unlock()
 		if err != nil {
 			return nil, err
@@ -159,7 +203,7 @@ func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller
 			}
 			switch rf.Type {
 			case FrameTypeResponse:
-				return rf.Payload, nil
+				return rf, nil
 			case FrameTypeError:
 				return nil, errors.New(string(rf.Payload))
 			default:
@@ -170,16 +214,21 @@ func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller
 		}
 	}
 
-	var chained func(ctx context.Context, payload []byte) ([]byte, error)
-	chained = invoke
+	// -----------------------
+	// Interceptor chain
+	// -----------------------
+	chained := invoke
 	for i := len(c.unaryInterceptors) - 1; i >= 0; i-- {
 		inter := c.unaryInterceptors[i]
 		next := chained
-		chained = func(ctx context.Context, payload []byte) ([]byte, error) {
-			return inter(ctx, method, payload, next)
+		chained = func(cctx context.Context, fr *Frame) (*Frame, error) {
+			return inter(cctx, method, fr, next)
 		}
 	}
 
+	// -----------------------
+	// Ensure deadline
+	// -----------------------
 	ctx2 := ctx
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -187,17 +236,35 @@ func (c *RPCClient) Call(ctx context.Context, method string, req WelliMarshaller
 		defer cancel()
 	}
 
-	out, err := chained(ctx2, reqData)
+	// -----------------------
+	// Execute
+	// -----------------------
+	respFrame, err := chained(ctx2, frame)
 	if err != nil {
 		return err
 	}
-	return resp.UnmarshalWells(out)
+
+	return resp.UnmarshalWells(respFrame.Payload)
 }
 
+// =======================
+// Open Stream (METADATA-AWARE)
+// =======================
 func (c *RPCClient) OpenStream(ctx context.Context, method string) (*Stream, error) {
 	streamID := c.nextStreamID()
+
+	meta := map[string]string{
+		"rpc.method": method,
+	}
+
 	stream := newStream(streamID, func(data []byte) error {
-		f := &Frame{Type: FrameTypeStreamData, StreamID: streamID, Payload: data}
+		f := &Frame{
+			Type:     FrameTypeStreamData,
+			StreamID: streamID,
+			Method:   method,
+			Metadata: meta,
+			Payload:  data,
+		}
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		return WriteFrame(c.conn, f)
@@ -207,12 +274,19 @@ func (c *RPCClient) OpenStream(ctx context.Context, method string) (*Stream, err
 	c.streams[streamID] = stream
 	c.streamsMu.Unlock()
 
-	f := &Frame{Type: FrameTypeStreamOpen, StreamID: streamID, Method: method}
+	openFrame := &Frame{
+		Type:     FrameTypeStreamOpen,
+		StreamID: streamID,
+		Method:   method,
+		Metadata: meta,
+	}
+
 	c.mu.Lock()
-	if err := WriteFrame(c.conn, f); err != nil {
+	if err := WriteFrame(c.conn, openFrame); err != nil {
 		c.mu.Unlock()
 		return nil, err
 	}
 	c.mu.Unlock()
+
 	return stream, nil
 }
